@@ -312,6 +312,100 @@ code {
 }
 
 .sci .native-emoji{font-family:'STIX Two Math','Cambria Math',Georgia,serif;font-size:20px;color:#333;}
+
+/* Basket */
+.basket {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.basket-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+}
+
+.basket-hint {
+  color: #999;
+  margin-left: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.basket-slot {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border: 1px dashed #ddd;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.basket-slot.filled {
+  border-style: solid;
+  border-color: #ddd;
+  background-color: #fafafa;
+}
+
+.basket-slot.filled:hover { border-color: #36a; }
+.basket-slot .js-emoji { cursor: pointer; line-height: 0; }
+.basket-slot .native-emoji { padding: 0; font-size: 24px; }
+.basket-slot.sci .native-emoji { font-size: 22px; }
+.basket-slot.dragging { opacity: 0.4; }
+.basket-slot.dropzone { border-color: #36a; background-color: #eaf3fb; }
+
+.basket-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  line-height: 15px;
+  text-align: center;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  background-color: #fff;
+  color: #999;
+  cursor: pointer;
+  font-size: 11px;
+  display: none;
+}
+
+.basket-slot:hover .basket-remove { display: block; }
+.basket-remove:hover { color: #ee9d9d; border-color: #ee9d9d; }
+
+.basket-clear {
+  flex: none;
+  margin-left: auto;
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 35px;
+  color: #999;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.basket-clear:hover { color: #ee9d9d; border-color: #ee9d9d; }
+
+@media (max-width: 480px) {
+  .basket-hint { display: none; }
+}
 </style>
 </head>
 <body>
@@ -326,6 +420,12 @@ code {
   <a href="#pushpin" class="mojigroup button">&#128204;</a>
   <a href="#greek" class="mojigroup button">&#945;</a>
 </header>
+
+<section class="basket">
+  <ul class="basket-row" aria-label="Favourite emoji basket"></ul>
+  <span class="basket-hint">Basket &middot; right-click any emoji to add &middot; drag to reorder</span>
+  <button type="button" class="basket-clear" hidden>Clear</button>
+</section>
 
 <main class="list">
   <ul class="emojis-container">
@@ -1839,7 +1939,7 @@ code {
 </main>
 
 <footer class="site-footer">
-  Offline emoji searcher &middot; click an emoji to copy &middot; press <code>/</code> to search
+  Offline emoji searcher &middot; click an emoji to copy &middot; right-click to basket it &middot; press <code>/</code> to search
 </footer>
 
 <script>
@@ -1895,6 +1995,136 @@ document.addEventListener('keydown', function(e){
 })
 
 searchHash()
+
+// ---- Basket ----
+var BASKET_SIZE = 5
+var BASKET_KEY = 'emoji-basket'
+var basketEl = document.querySelector('.basket-row')
+var basketClearEl = document.querySelector('.basket-clear')
+var basket = []
+
+try { basket = JSON.parse(localStorage.getItem(BASKET_KEY)) || [] } catch (e) { basket = [] }
+basket = basket.filter(function(b){ return b && typeof b.char === 'string' }).slice(0, BASKET_SIZE)
+
+function saveBasket(){
+  try { localStorage.setItem(BASKET_KEY, JSON.stringify(basket)) } catch (e) {}
+}
+
+function renderBasket(){
+  basketEl.textContent = ''
+  for (var i = 0; i < BASKET_SIZE; i++){
+    var item = basket[i]
+    var slot = document.createElement('li')
+    slot.className = 'basket-slot' + (item ? ' filled' : '') + (item && item.sci ? ' sci' : '')
+    slot.setAttribute('data-slot', i)
+    if (item){
+      slot.draggable = true
+      var wrap = document.createElement('span')
+      wrap.className = 'js-emoji'
+      wrap.setAttribute('title', item.title || item.char)
+      var ch = document.createElement('div')
+      ch.className = 'js-emoji-char native-emoji'
+      ch.setAttribute('data-emoji', item.char)
+      ch.textContent = item.char
+      wrap.appendChild(ch)
+      slot.appendChild(wrap)
+      var rm = document.createElement('button')
+      rm.className = 'basket-remove'
+      rm.type = 'button'
+      rm.setAttribute('title', 'Remove from basket')
+      rm.setAttribute('aria-label', 'Remove ' + item.char + ' from basket')
+      rm.textContent = '×'
+      slot.appendChild(rm)
+    }
+    basketEl.appendChild(slot)
+  }
+  basketClearEl.hidden = basket.length === 0
+}
+
+function addToBasket(char, title, isSci){
+  if (basket.some(function(b){ return b.char === char })) return
+  // When full, the last slot is the one that gets recycled.
+  basket[basket.length < BASKET_SIZE ? basket.length : BASKET_SIZE - 1] =
+    { char: char, title: title, sci: !!isSci }
+  saveBasket(); renderBasket()
+}
+
+function moveInBasket(from, to){
+  if (from === to || from < 0 || from >= basket.length) return
+  to = Math.min(to, basket.length - 1)
+  var moved = basket.splice(from, 1)[0]
+  basket.splice(to, 0, moved)
+  saveBasket(); renderBasket()
+}
+
+// Right-click: add from the grid, remove from the basket.
+document.addEventListener('contextmenu', function(e){
+  var slot = e.target.closest('.basket-slot')
+  if (slot){
+    var i = +slot.getAttribute('data-slot')
+    if (basket[i]){ basket.splice(i, 1); saveBasket(); renderBasket(); e.preventDefault() }
+    return
+  }
+  var em = e.target.closest('.js-emoji')
+  if (!em) return
+  var node = em.querySelector('.js-emoji-char')
+  if (!node) return
+  addToBasket(node.getAttribute('data-emoji'), em.getAttribute('title'), em.classList.contains('sci'))
+  e.preventDefault()
+})
+
+basketEl.addEventListener('click', function(e){
+  if (!e.target.classList.contains('basket-remove')) return
+  var i = +e.target.closest('.basket-slot').getAttribute('data-slot')
+  if (basket[i]){ basket.splice(i, 1); saveBasket(); renderBasket() }
+})
+
+basketClearEl.addEventListener('click', function(){
+  if (!basket.length) return
+  basket = []
+  saveBasket(); renderBasket()
+})
+
+var dragFrom = -1
+
+basketEl.addEventListener('dragstart', function(e){
+  var slot = e.target.closest('.basket-slot')
+  if (!slot || !basket[+slot.getAttribute('data-slot')]) { e.preventDefault(); return }
+  dragFrom = +slot.getAttribute('data-slot')
+  slot.classList.add('dragging')
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', basket[dragFrom].char)
+})
+
+basketEl.addEventListener('dragover', function(e){
+  if (dragFrom < 0) return
+  var slot = e.target.closest('.basket-slot')
+  if (!slot) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  var to = Math.min(+slot.getAttribute('data-slot'), basket.length - 1)
+  basketEl.querySelectorAll('.basket-slot').forEach(function(el){
+    el.classList.toggle('dropzone', +el.getAttribute('data-slot') === to && to !== dragFrom)
+  })
+})
+
+basketEl.addEventListener('drop', function(e){
+  if (dragFrom < 0) return
+  var slot = e.target.closest('.basket-slot')
+  if (!slot) return
+  e.preventDefault()
+  moveInBasket(dragFrom, +slot.getAttribute('data-slot'))
+  dragFrom = -1
+})
+
+basketEl.addEventListener('dragend', function(){
+  dragFrom = -1
+  basketEl.querySelectorAll('.basket-slot').forEach(function(el){
+    el.classList.remove('dragging', 'dropzone')
+  })
+})
+
+renderBasket()
 </script>
 </body>
 </html>
